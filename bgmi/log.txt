@@ -1,0 +1,6 @@
+UserID: 5676702497 | Time: 2024-06-20 11:51:05.679814 | Command: /bgmi | Target: 4.213.68.40 | Port: 18838 | Time: 180
+Username: @STRANGER_of
+Target: 4.213.68.40
+Port: 18838
+Time: 180
+
